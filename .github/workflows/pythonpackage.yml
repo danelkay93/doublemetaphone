@@ -4,7 +4,6 @@ on: [push]
 
 jobs:
   test:
-
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -13,57 +12,58 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4.1.1
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/setup.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
     - name: Install dependencies
       run: |
         python -m ensurepip --upgrade
         pip install -e .
-    # - name: Test with pytest
-    #   run: |        
-    #     pip install -r requirements.txt
-    #     pytest
-    # - name: Coveralls
-    #   env:
-    #     COVERALLS_PARALLEL: true
-    #     COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #   run: |
-    #     pip install https://github.com/bboe/coveralls-python/archive/github_actions.zip
-    #     coveralls
-  # finish:
-  #   needs: test
-  #   runs-on: ubuntu-latest
-  #   steps:
-    # - name: Coveralls Finished
-    #   uses: coverallsapp/github-action@57daa114ba54fd8e1c8563e8027325c0bf2f5e80
-    #   with:
-    #     github-token: ${{ secrets.GITHUB_TOKEN }}
-    #     parallel-finished: true        
+
   wheels:
     if: github.event_name == 'push'
-    # && startsWith(github.event.ref, 'refs/tags')  
     needs: test
-    name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest]
     steps:
     - uses: actions/checkout@v4.1.1
     - uses: actions/setup-python@v5
+
     - name: Set up QEMU
       if: runner.os == 'Linux'
       uses: docker/setup-qemu-action@v3
       with:
         platforms: all
         python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py', '**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
     - name: Build wheels
       uses: pypa/cibuildwheel@v2.16.5
       env:
         CIBW_ARCHS_MACOS: x86_64 arm64 universal2
         CIBW_ARCHS_LINUX: auto aarch64
+
     - name: Build sdist
       run: |
         pip install cython wheel setuptools
@@ -72,14 +72,24 @@ jobs:
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v4.3.1
       with:
+        name: distribution-${{ github.run_number }}
         path: "dist/*"
-        overwrite: true
-    # - name: Publish wheels to PyPI
-    #   env:
-    #     TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-    #     TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-    #   run: |
-    #     pip install twine
-    #     twine upload --skip-existing wheelhouse/*.whl
-    #     twine upload dist/*
-      continue-on-error: true
+        if-no-files-found: error
+        retention-days: 1
+
+  create_release:
+    needs: wheels
+    runs-on: ubuntu-latest
+    steps:
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: run-${{ github.run_number }}
+        release_name: Release for run ${{ github.run_number }}
+        draft: false
+        prerelease: false
+        body: |
+          Automated release for run ${{ github.run_number }}.
+

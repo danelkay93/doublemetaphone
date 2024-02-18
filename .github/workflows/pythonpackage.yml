@@ -19,7 +19,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Cache pip
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/setup.py') }}
@@ -42,13 +42,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4.1.1
     - uses: actions/setup-python@v5
-
+      with:
+        python-version: ${{ matrix.python-version }}
+        
     - name: Set up QEMU
       if: runner.os == 'Linux'
       uses: docker/setup-qemu-action@v3
       with:
         platforms: all
-        python-version: ${{ matrix.python-version }}
 
     - name: Cache pip
       uses: actions/cache@v3
